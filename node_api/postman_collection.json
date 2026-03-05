@@ -1,0 +1,111 @@
+{
+  "info": {
+    "name": "Event Ticketing API - Examples",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "List Events",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "http://localhost:3000/api/events", "protocol": "http", "host": ["localhost"], "port": "3000", "path": ["api","events"] }
+      }
+    },
+    {
+      "name": "Create User",
+      "request": {
+        "method": "POST",
+        "header": [{"key":"Content-Type","value":"application/json"}],
+        "body": {"mode":"raw","raw":"{\n  \"user_id\": \"U1\",\n  \"username\": \"Alice\",\n  \"email\": \"alice@example.com\",\n  \"password\": \"secret\",\n  \"type\": \"user\"\n}"},
+        "url": { "raw": "http://localhost:3000/api/users", "protocol": "http", "host": ["localhost"], "port": "3000", "path": ["api","users"] }
+      }
+    },
+    {
+      "name": "Create Event",
+      "request": {
+        "method": "POST",
+        "header": [{"key":"Content-Type","value":"application/json"}],
+        "body": {"mode":"raw","raw":"{\n  \"event_id\": \"E100\",\n  \"event_name\": \"Happy Concert\",\n  \"event_description\": \"Fun\",\n  \"event_date\": \"2026-06-18\",\n  \"venue_id\": \"V001\",\n  \"organizer_id\": \"U1\",\n  \"ticket_price\": 50,\n  \"type\": \"Concert\"\n}"},
+        "url": { "raw": "http://localhost:3000/api/events", "protocol": "http", "host": ["localhost"], "port": "3000", "path": ["api","events"] }
+      }
+    },
+    {
+      "name": "Booking (transaction)",
+      "request": {
+        "method": "POST",
+        "header": [{"key":"Content-Type","value":"application/json"}],
+        "body": {"mode":"raw","raw":"{\n  \"ticket_id\": \"T100\",\n  \"event_id\": \"E001\",\n  \"seat_id\": \"SEAT-S001-02\",\n  \"user_id\": \"U1\",\n  \"payment_id\": \"P100\",\n  \"method\": \"Online Wallet Payment\",\n  \"amount\": 50\n}"},
+        "url": { "raw": "http://localhost:3000/api/book", "protocol": "http", "host": ["localhost"], "port": "3000", "path": ["api","book"] }
+      }
+    }
+    ,
+    {
+      "name": "User Purchase History",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "http://localhost:3000/api/users/U002/purchases", "protocol": "http", "host": ["localhost"], "port": "3000", "path": ["api","users","U002","purchases"] }
+      }
+    },
+    {
+      "name": "Event Ratings (single)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "http://localhost:3000/api/events/E001/ratings", "protocol": "http", "host": ["localhost"], "port": "3000", "path": ["api","events","E001","ratings"] }
+      }
+    },
+    {
+      "name": "Event Details (single)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "http://localhost:3000/api/events/E001/details", "protocol": "http", "host": ["localhost"], "port": "3000", "path": ["api","events","E001","details"] }
+      }
+    },
+    {
+      "name": "Get User By Email",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "http://localhost:3000/api/users/by-email?email=fawad.idrees@example.com", "protocol": "http", "host": ["localhost"], "port": "3000", "path": ["api","users","by-email"], "query": [{"key":"email","value":"fawad.idrees@example.com"}] }
+      }
+    }
+    ,
+    {
+      "name": "User search (generic)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "http://localhost:3000/api/users/search?column=user_id&value=U001", "protocol": "http", "host": ["localhost"], "port": "3000", "path": ["api","users","search"], "query": [{"key":"column","value":"user_id"},{"key":"value","value":"U001"}] }
+      }
+    },
+    {
+      "name": "User search (by-column shortcut)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "http://localhost:3000/api/users/by-user_id?user_id=U001", "protocol": "http", "host": ["localhost"], "port": "3000", "path": ["api","users","by-user_id"], "query": [{"key":"user_id","value":"U001"}] }
+      }
+    },
+    {
+      "name": "Create Ticket (VIP-only)",
+      "request": {
+        "method": "POST",
+        "header": [{"key":"Content-Type","value":"application/json"}],
+        "body": {"mode":"raw","raw":"{\n  \"ticket_id\": \"TVIP1\",\n  \"event_id\": \"E001\",\n  \"seat_id\": \"SEAT-S001-03\",\n  \"reserved\": \"Y\",\n  \"purchased_by\": null\n}"},
+        "url": { "raw": "http://localhost:3000/api/tickets", "protocol": "http", "host": ["localhost"], "port": "3000", "path": ["api","tickets"] }
+      }
+    },
+    {
+      "name": "Create Ticket (purchase)",
+      "request": {
+        "method": "POST",
+        "header": [{"key":"Content-Type","value":"application/json"}],
+        "body": {"mode":"raw","raw":"{\n  \"ticket_id\": \"TBUY1\",\n  \"event_id\": \"E001\",\n  \"seat_id\": \"SEAT-S001-04\",\n  \"reserved\": \"N\",\n  \"purchased_by\": \"U1\"\n}"},
+        "url": { "raw": "http://localhost:3000/api/tickets", "protocol": "http", "host": ["localhost"], "port": "3000", "path": ["api","tickets"] }
+      }
+    }
+  ]
+}
