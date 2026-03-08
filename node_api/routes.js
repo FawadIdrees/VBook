@@ -611,28 +611,46 @@ router.delete('/tickets/:id', async (req, res) => {
 // --- Transactional booking flow (reserve seat + record payment) ---
 router.post('/book', async (req, res) => {
   const { ticket_id, event_id, seat_id, user_id, payment_id, method, amount } = req.body;
+
+  // Basic input validation
+  if (!ticket_id || !event_id || !seat_id || !user_id || !payment_id || !method || (amount === undefined || amount === null)) {
+    return res.status(400).json({ error: 'ticket_id, event_id, seat_id, user_id, payment_id, method and amount are required' });
+  }
+  const allowedMethods = ['Bank Payment', 'Online Wallet Payment', 'Cash', 'COD'];
+  if (!allowedMethods.includes(method)) return res.status(400).json({ error: `method must be one of: ${allowedMethods.join(', ')}` });
+  const parsedAmount = Number(amount);
+  if (Number.isNaN(parsedAmount) || parsedAmount < 0) return res.status(400).json({ error: 'amount must be a non-negative number' });
+
   const pool = await poolPromise;
   const transaction = new sql.Transaction(pool);
   try {
-    await transaction.begin();
+    // Use SERIALIZABLE to avoid race conditions on seat availability
+    await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
 
-    // Check seat state for the event using a fresh request on the transaction
-    // - If any ticket for this event/seat has purchased_by IS NOT NULL -> already purchased
-    // - Else if any ticket row exists with reserved='Y' and purchased_by IS NULL -> VIP-only seat (not purchasable here)
+    // Check event exists
+    const eventCheck = await transaction.request().input('event_id', sql.VarChar(20), event_id)
+      .query('SELECT event_id FROM Events WHERE event_id = @event_id');
+    if (!eventCheck.recordset.length) {
+      await transaction.rollback();
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    // Check seat state for the event using the transaction
     const seatCheckReq = transaction.request();
     const seatRows = await seatCheckReq.input('event_id', sql.VarChar(20), event_id)
       .input('seat_id', sql.VarChar(20), seat_id)
       .query("SELECT reserved, purchased_by FROM Tickets WHERE event_id = @event_id AND seat_id = @seat_id");
+
     if (seatRows.recordset.some(r => r.purchased_by !== null)) {
       await transaction.rollback();
       return res.status(409).json({ error: 'Seat already purchased for this event' });
     }
-    if (seatRows.recordset.some(r => r.reserved === 'Y' && r.purchased_by == null)) {
+    if (seatRows.recordset.some(r => r.reserved === 'Y' && (r.purchased_by === null || r.purchased_by === undefined))) {
       await transaction.rollback();
       return res.status(403).json({ error: 'Seat is VIP-only and cannot be purchased via this endpoint' });
     }
 
-    // Insert ticket using a new request to avoid reusing parameter names
+    // Insert ticket
     const insertReq = transaction.request();
     await insertReq.input('ticket_id', sql.VarChar(20), ticket_id)
       .input('event_id', sql.VarChar(20), event_id)
@@ -641,20 +659,28 @@ router.post('/book', async (req, res) => {
       .input('purchased_by', sql.VarChar(20), user_id)
       .query('INSERT INTO Tickets (ticket_id,event_id,seat_id,reserved,purchased_by) VALUES (@ticket_id,@event_id,@seat_id,@reserved,@purchased_by)');
 
-    // Insert payment using another fresh request
+    // Insert payment
     const paymentReq = transaction.request();
     await paymentReq.input('payment_id', sql.VarChar(20), payment_id)
       .input('user_id', sql.VarChar(20), user_id)
       .input('ticket_id', sql.VarChar(20), ticket_id)
       .input('method', sql.VarChar(50), method)
-      .input('amount', sql.Float, amount)
+      .input('amount', sql.Float, parsedAmount)
       .query('INSERT INTO Payments (payment_id,user_id,ticket_id,method,amount) VALUES (@payment_id,@user_id,@ticket_id,@method,@amount)');
 
     await transaction.commit();
     res.status(201).json({ message: 'Booking successful', ticket_id, payment_id });
   } catch (err) {
     try { await transaction.rollback(); } catch (e) {}
-    res.status(500).json({ error: err.message });
+    // Handle common constraint errors
+    const msg = (err && err.message) ? err.message : 'Unknown error';
+    if (msg.includes('PRIMARY') || msg.includes('duplicate') || msg.includes('UNIQUE')) {
+      return res.status(409).json({ error: 'Ticket or Payment ID already exists' });
+    }
+    if (msg.includes('FOREIGN')) {
+      return res.status(400).json({ error: 'Foreign key constraint failed (check user/event/seat IDs)' });
+    }
+    res.status(500).json({ error: msg });
   }
 });
 
