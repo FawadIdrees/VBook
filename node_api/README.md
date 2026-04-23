@@ -28,6 +28,33 @@ npm run start
 npm run dev
 ```
 
+Frontend (React + Vite)
+
+The frontend app is in `../frontend` and uses `../vbook.jsx` as the main UI module.
+
+```bash
+cd ../frontend
+cp .env.example .env
+npm install
+npm run dev
+```
+
+Default frontend environment:
+
+- `VITE_API_BASE=http://localhost:3000/api`
+- `VITE_SOCKET_BASE=http://localhost:3000`
+
+For production-like local serving:
+
+```bash
+cd ../frontend
+npm run build
+cd ../node_api
+npm run start
+```
+
+When `frontend/dist` exists, the backend serves the built frontend automatically.
+
 Database: executing `scheme.sql`
 
 If you have Microsoft SQL Server and `sqlcmd` (mssql-tools) installed, run:
@@ -85,6 +112,17 @@ Postman
 }
 ```
 
+Automated verification scripts
+
+Run with the API server running at `http://localhost:3000`:
+
+```bash
+cd node_api
+npm test                 # auth + access-control smoke checks
+npm run concurrency      # concurrent booking race check
+npm run test:admin-flow  # organizer/admin end-to-end management flow
+```
+
 Curl examples
 
 - List events:
@@ -110,4 +148,16 @@ Notes on booking endpoint
 - The `/api/book` endpoint performs an atomic transaction: it checks seat availability (using `purchased_by IS NOT NULL`), inserts the ticket (sets `reserved = 'N'` for booked tickets because `reserved='Y'` is used to mark VIP-only seats) and records the payment. If the seat is already taken, it returns HTTP 409.
  - The `/api/book` endpoint performs an atomic transaction: it checks seat availability (using `purchased_by IS NOT NULL`), inserts the ticket (sets `reserved = 'N'` for booked tickets because `reserved='Y'` is used to mark VIP-only seats) and records the payment. If the seat is already taken, it returns HTTP 409.
  - VIP-only seats: a ticket row with `reserved='Y'` indicates the seat is VIP-only. Such seats cannot be purchased via the standard `/api/book` endpoint and will return HTTP 403 if attempted. Purchased tickets are identified by `purchased_by IS NOT NULL`.
+
+Demo pages
+
+- Admin demo: http://localhost:3000/admin.html — log in as an admin and block/unblock seats or promote waitlist entries (demo controls).
+- Seatmap demo: http://localhost:3000/seatmap.html — user demo: login, view seatmap, simulate payment, and book.
+
+Notes
+
+- The admin demo calls admin endpoints and the waitlist promotion endpoint to illustrate organizer workflows; it uses the same auth flow as other API calls.
+- If an endpoint path differs in your local `routes.js`, update `public/admin.html` accordingly.
+
+If you'd like, I can now bundle the React `vbook.jsx` into a small SPA and add concurrency e2e tests — say "bundle UI and test" or I'll proceed automatically after your confirmation.
 

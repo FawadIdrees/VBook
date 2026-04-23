@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Admin Demo</title>
+  <style>body{font-family:Arial,Helvetica,sans-serif;background:#0f1724;color:#e6eef8;padding:20px} .card{background:#0b1220;padding:16px;border-radius:8px;border:1px solid #172134;margin-bottom:12px} input,button{padding:8px;margin:6px 0;border-radius:6px;border:1px solid #233242;background:#07101a;color:#e6eef8}</style>
+</head>
+<body>
+  <h2>Admin Controls (Demo)</h2>
+  <div class="card">
+    <label>Admin Email: <input id="email" value="jane.admin@example.com"></label><br>
+    <label>Password: <input id="password" type="password" value="AdminPass" /></label><br>
+    <button id="login">Login as Admin</button>
+    <div id="admin-status"></div>
+  </div>
+
+  <div class="card">
+    <h4>Block / Unblock Seat</h4>
+    <label>Seat ID: <input id="seatId" value="SEAT-S001-05"></label><br>
+    <button id="block">Block Seat</button>
+    <button id="unblock">Unblock Seat</button>
+    <div id="block-res"></div>
+  </div>
+
+  <div class="card">
+    <h4>Promote Waitlist</h4>
+    <label>Event ID: <input id="promEvent" value="E001"></label>
+    <label>Section ID: <input id="promSection" value="S001"></label><br>
+    <button id="promote">Promote First</button>
+    <div id="prom-res"></div>
+  </div>
+
+  <script>
+    const API='/api'; let token=null;
+    document.getElementById('login').addEventListener('click', async ()=>{
+      const email=document.getElementById('email').value; const password=document.getElementById('password').value;
+      const r=await fetch(API+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
+      const j=await r.json(); if(r.ok){ token=j.token; document.getElementById('admin-status').textContent='Logged in as admin'; } else document.getElementById('admin-status').textContent='Login failed: '+(j.error||j.message);
+    });
+
+    document.getElementById('block').addEventListener('click', async ()=>{
+      const id=document.getElementById('seatId').value; if(!token) return alert('Login first');
+      const r=await fetch(API+`/admin/seats/${encodeURIComponent(id)}/block`,{method:'POST',headers:{'Authorization':'Bearer '+token}});
+      document.getElementById('block-res').textContent = r.status===200? 'Seat blocked':'Failed: '+r.status;
+    });
+    document.getElementById('unblock').addEventListener('click', async ()=>{
+      const id=document.getElementById('seatId').value; if(!token) return alert('Login first');
+      const r=await fetch(API+`/admin/seats/${encodeURIComponent(id)}/unblock`,{method:'POST',headers:{'Authorization':'Bearer '+token}});
+      document.getElementById('block-res').textContent = r.status===200? 'Seat unblocked':'Failed: '+r.status;
+    });
+
+    document.getElementById('promote').addEventListener('click', async ()=>{
+      const e=document.getElementById('promEvent').value, s=document.getElementById('promSection').value; if(!token) return alert('Login first');
+      const r=await fetch(API+`/waiting/promote/${encodeURIComponent(e)}/${encodeURIComponent(s)}`,{method:'POST',headers:{'Authorization':'Bearer '+token}});
+      const j=await r.json(); document.getElementById('prom-res').textContent = r.ok? (j.message || 'Promoted') : ('Failed: '+(j.error||j.message||r.status));
+    });
+  </script>
+</body>
+</html>

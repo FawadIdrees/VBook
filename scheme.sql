@@ -34,7 +34,10 @@ create table Seats
     x_coord int not null,
     y_coord int not null,
     section_id varchar(20) not null foreign key references Sections(section_id),
-    seat_num int not null
+    seat_num int not null,
+    accessible bit default 0,
+    obstructed bit default 0,
+    blocked bit default 0
 );
 
 create table Events
@@ -57,6 +60,7 @@ create table Tickets
     reserved char(1) check(reserved in ('Y','N')) not null,
     purchased_by varchar(20) null foreign key references Users(user_id)
 );
+create index IX_Tickets_EventSeat on Tickets(event_id, seat_id);
 
 create table Payments
 (
@@ -76,6 +80,30 @@ create table Waiting
     user_id varchar(20) not null foreign key references Users(user_id),
     created_at datetime default GETDATE()
 );
+create unique index UX_Waiting_EventSectionUser on Waiting(event_id, section_id, user_id);
+create index IX_Waiting_EventSectionCreated on Waiting(event_id, section_id, created_at);
+
+-- Persistent storage for password reset tokens (replace in-memory store)
+create table PasswordResetTokens
+(
+    token varchar(128) primary key,
+    user_id varchar(20) not null foreign key references Users(user_id),
+    expires_at datetime not null,
+    created_at datetime default GETDATE()
+);
+
+-- Persistent holds for waitlist promotions (15-minute holds)
+create table WaitlistHolds
+(
+    hold_id varchar(20) primary key,
+    user_id varchar(20) not null foreign key references Users(user_id),
+    event_id varchar(20) not null foreign key references Events(event_id),
+    section_id varchar(20) not null foreign key references Sections(section_id),
+    seat_id varchar(20) null foreign key references Seats(seat_id),
+    expires_at datetime not null,
+    created_at datetime default GETDATE()
+);
+create index IX_WaitlistHolds_EventSeatSectionExpiry on WaitlistHolds(event_id, seat_id, section_id, expires_at);
 
 create table SavedPayments
 (
@@ -94,6 +122,7 @@ create table Feedback
     comment varchar(2000) null,
     created_at datetime default GETDATE()
 );
+create unique index UX_Feedback_EventUser on Feedback(event_id, user_id);
 
 -- Use the DB
 USE project;
@@ -205,3 +234,5 @@ INSERT INTO Feedback (feedback_id, user_id, event_id, rating, comment, created_a
 ('F001','U002','E001',5,'Amazing performance, great sound and energy!','2026-02-26 21:00:00'),
 ('F002','U004','E003',4,'Good selection of films, seating was comfortable.','2026-03-02 18:30:00');
 GO
+
+select * from Events;

@@ -17,7 +17,7 @@
       "request": {
         "method": "POST",
         "header": [{"key":"Content-Type","value":"application/json"}],
-        "body": {"mode":"raw","raw":"{\n  \"user_id\": \"U1\",\n  \"username\": \"Alice\",\n  \"email\": \"alice@example.com\",\n  \"password\": \"secret\",\n  \"type\": \"user\"\n}"},
+        "body": {"mode":"raw","raw":"{\n  \"user_id\": \"U2\",\n  \"username\": \"Alice\",\n  \"email\": \"alice@example.com\",\n  \"password\": \"secret\",\n  \"type\": \"user\"\n}"},
         "url": { "raw": "http://localhost:3000/api/users", "protocol": "http", "host": ["localhost"], "port": "3000", "path": ["api","users"] }
       }
     },

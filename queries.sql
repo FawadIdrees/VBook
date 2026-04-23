@@ -1,5 +1,6 @@
 -- DQL queries and Views for project functionalities
 -- 1) Top 5 Events by tickets sold
+use project;
 SELECT TOP 5 e.event_id, e.event_name, COUNT(t.ticket_id) AS tickets_sold
 FROM Events e
 LEFT JOIN Tickets t ON e.event_id = t.event_id AND t.purchased_by IS NOT NULL
@@ -99,12 +100,6 @@ GROUP BY e.event_id, e.event_name, e.event_date, v.venue_name, e.organizer_id;
 
 -- End of queries
 
-/*
-    Advanced DQL for Venue Management & Event Ticketing Portal
-    - Adds support for password reset tokens and holds (timed holds)
-    - Seat attributes (accessible, obstructed, blocked)
-    - Queries to join waitlist, promote users, and view seat map state
-*/
 
 
 
@@ -130,7 +125,7 @@ UPDATE Sections SET section_name=@section_name, section_description=@section_des
 INSERT INTO Seats (seat_id,x_coord,y_coord,section_id,seat_num,accessible,obstructed,blocked) VALUES (@seat_id,@x_coord,@y_coord,@section_id,@seat_num,@accessible,@obstructed,@blocked);
 UPDATE Seats SET x_coord=@x_coord,y_coord=@y_coord,section_id=@section_id,seat_num=@seat_num,accessible=@accessible,obstructed=@obstructed,blocked=@blocked WHERE seat_id=@seat_id
 
--- 16) Cancel ticket and refund (simplified)
+-- 16) Cancel ticket and refund
 -- fields: @ticket_id
 -- delete payment and mark ticket as not reserved (or delete ticket)
 DELETE FROM Payments WHERE ticket_id = @ticket_id;
@@ -159,5 +154,3 @@ JOIN Events e ON e.venue_id = sec.venue_id
 LEFT JOIN Seats s ON s.section_id = sec.section_id
 LEFT JOIN Tickets t ON t.seat_id = s.seat_id AND t.event_id = e.event_id
 GROUP BY sec.section_id,sec.section_name,sec.capacity,e.event_id;
-
--- End of advanced DQL
