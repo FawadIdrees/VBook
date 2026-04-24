@@ -227,6 +227,17 @@ async function requestPasswordReset(email) {
   });
 }
 
+async function completePasswordReset(token, new_password) {
+  await apiRequest("/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ token, new_password })
+  });
+}
+
+async function fetchSavedPayments(token) {
+  return apiRequest("/saved-payments", {}, token);
+}
+
 function mapApiEvent(apiEvent) {
   return {
     id: apiEvent.event_id,
@@ -531,7 +542,92 @@ const genSeats = () => {
 };
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
-const AuthPage = ({ onLogin }) => {
+// ─── RESET PASSWORD PAGE ──────────────────────────────────────────────────────
+const ResetPasswordPage = ({ onDone }) => {
+  const [token, setToken] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("token") || "";
+    } catch (e) { return ""; }
+  });
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+  const [err, setErr] = useState("");
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setErr("");
+    if (!token.trim()) return setErr("Reset token is required");
+    if (!isStrongPassword(password)) return setErr("Password must be at least 8 chars and include letters and numbers");
+    if (password !== confirm) return setErr("Passwords do not match");
+    setLoading(true);
+    try {
+      await completePasswordReset(token.trim(), password);
+      setDone(true);
+    } catch (error) {
+      setErr(getErrorMessage(error, "Reset failed. The token may have expired."));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:T.bg, position:"relative", overflow:"hidden" }}>
+      <div style={{ position:"absolute", inset:0, background:`radial-gradient(ellipse 60% 50% at 20% 60%, rgba(91,127,255,0.07) 0%, transparent 100%), radial-gradient(ellipse 40% 60% at 80% 20%, rgba(212,168,75,0.06) 0%, transparent 100%)` }} />
+      {[500, 700, 900].map(s => (
+        <div key={s} style={{ position:"absolute", width:s, height:s, borderRadius:"50%", border:"1px solid rgba(212,168,75,0.04)", top:"50%", left:"50%", transform:"translate(-50%,-50%)", pointerEvents:"none" }} />
+      ))}
+      <div style={{ width:420, position:"relative", zIndex:1 }}>
+        <div style={{ textAlign:"center", marginBottom:36 }}>
+          <div style={{ display:"inline-flex", alignItems:"center", gap:11, marginBottom:10 }}>
+            <div style={{ width:40, height:40, background:`linear-gradient(135deg,${T.gold},${T.goldDark})`, borderRadius:10, display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <Ic n="ticket" s={19} c="#09090F" />
+            </div>
+            <span className="serif" style={{ fontSize:30, fontWeight:700, color:T.gold, letterSpacing:3 }}>vbook</span>
+          </div>
+        </div>
+        <div className="card" style={{ padding:36 }}>
+          {done ? (
+            <div style={{ textAlign:"center", padding:"8px 0" }}>
+              <div style={{ width:60, height:60, background:T.tealSoft, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 18px" }}>
+                <Ic n="check" s={26} c={T.teal} />
+              </div>
+              <h3 className="serif" style={{ fontSize:20, marginBottom:8 }}>Password reset!</h3>
+              <p style={{ color:T.textSub, fontSize:13, lineHeight:1.6, marginBottom:24 }}>Your password has been updated. You can now sign in with your new password.</p>
+              <button className="btn btn-primary" style={{ width:"100%", justifyContent:"center" }} onClick={onDone}>Sign in</button>
+            </div>
+          ) : (
+            <form onSubmit={submit}>
+              <h3 className="serif" style={{ fontSize:20, marginBottom:6 }}>Set new password</h3>
+              <p style={{ color:T.textSub, fontSize:13, marginBottom:24 }}>Enter the reset token from your email and choose a new password</p>
+              <div style={{ marginBottom:14 }}>
+                <label style={{ fontSize:12, color:T.textSub, display:"block", marginBottom:6 }}>Reset token</label>
+                <input placeholder="Paste token from email" value={token} onChange={e => setToken(e.target.value)} required />
+              </div>
+              <div style={{ marginBottom:14 }}>
+                <label style={{ fontSize:12, color:T.textSub, display:"block", marginBottom:6 }}>New password</label>
+                <input type="password" placeholder="Min. 8 characters" value={password} onChange={e => setPassword(e.target.value)} required />
+              </div>
+              <div style={{ marginBottom:16 }}>
+                <label style={{ fontSize:12, color:T.textSub, display:"block", marginBottom:6 }}>Confirm password</label>
+                <input type="password" placeholder="Repeat new password" value={confirm} onChange={e => setConfirm(e.target.value)} required />
+              </div>
+              {err && <p style={{ color:T.rose, fontSize:12, marginBottom:12, display:"flex", alignItems:"center", gap:5 }}><Ic n="alert" s={13} c={T.rose} />{err}</p>}
+              <button className="btn btn-primary" type="submit" style={{ width:"100%", justifyContent:"center", padding:"11px 20px", marginBottom:10 }} disabled={loading}>
+                {loading ? "Updating…" : "Set new password"}
+              </button>
+              <button type="button" className="btn btn-ghost" style={{ width:"100%", justifyContent:"center" }} onClick={onDone}>Back to sign in</button>
+            </form>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AuthPage = ({ onLogin, onResetPassword }) => {
   const [tab, setTab] = useState("login");
   const [form, setForm] = useState({ email:"", password:"", name:"", role:"customer" });
   const [loading, setLoading] = useState(false);
@@ -656,7 +752,7 @@ const AuthPage = ({ onLogin }) => {
                 )}
                 {tab === "login" && (
                   <div style={{ textAlign:"right", marginBottom:18 }}>
-                    <button type="button" onClick={() => setResetMode(true)} style={{ background:"none", border:"none", color:T.gold, fontSize:12, cursor:"pointer", fontFamily:"'Inter',sans-serif", fontWeight:500 }}>Forgot password?</button>
+                    <button type="button" onClick={() => onResetPassword ? onResetPassword() : setResetMode(true)} style={{ background:"none", border:"none", color:T.gold, fontSize:12, cursor:"pointer", fontFamily:"'Inter',sans-serif", fontWeight:500 }}>Forgot password?</button>
                   </div>
                 )}
                 {err && <p style={{ color:T.rose, fontSize:12, marginBottom:12, display:"flex", alignItems:"center", gap:5 }}><Ic n="alert" s={13} c={T.rose} />{err}</p>}
@@ -853,7 +949,7 @@ const EventsPage = ({ setPage, setSelectedEvent, eventsData = [], eventsLoading 
   const [cat, setCat] = useState("All");
   const [view, setView] = useState("grid");
   const [sort, setSort] = useState("date");
-  const cats = ["All","Music","Theatre","Sports","Conference","Art"];
+  const cats = ["All","Concert","Seminar","Movie Screening","Party"];
 
   const sourceEvents = eventsData.length ? eventsData : EVENTS;
   const filtered = sourceEvents
@@ -982,9 +1078,27 @@ const EventDetail = ({ event, setPage, user, toast }) => {
     setStep("confirmed");
   };
 
-  const joinWaitlist = () => {
-    setJoined(true);
-    toast("You've joined the waitlist! We'll notify you by email.", "success");
+  const joinWaitlist = async () => {
+    if (!user?.token) { toast("Please sign in to join the waitlist", "error"); return; }
+    try {
+      await apiRequest("/waiting", {
+        method: "POST",
+        body: JSON.stringify({
+          event_id: event.event_id || event.id,
+          section_id: section === "VIP" ? "S001" : section === "Premium" ? "S002" : "S001",
+          force: true
+        })
+      }, user.token);
+      setJoined(true);
+      toast("You've joined the waitlist! We'll notify you by email.", "success");
+    } catch (error) {
+      if (error.message?.includes("Already on waitlist")) {
+        setJoined(true);
+        toast("You're already on the waitlist for this event.", "info");
+      } else {
+        toast(error.message || "Failed to join waitlist", "error");
+      }
+    }
   };
 
   if (step === "confirmed") {
@@ -1235,6 +1349,9 @@ const SeatMapPage = ({ event, setPage, toast, user }) => {
   const [filter, setFilter] = useState("all");
   const [holdTimer, setHoldTimer] = useState(null);
   const [timeLeft, setTimeLeft] = useState(0);
+  const [savedPayments, setSavedPayments] = useState([]);
+  const [payMethod, setPayMethod] = useState("Online Wallet Payment");
+  const [bookingInProgress, setBookingInProgress] = useState(false);
   const timerRef = useRef(null);
   const eventId = event?.event_id || event?.id;
 
@@ -1264,6 +1381,13 @@ const SeatMapPage = ({ event, setPage, toast, user }) => {
     return () => disconnectRealtime();
   }, [eventId, reloadSeatmap]);
 
+  useEffect(() => {
+    if (!user?.token) return;
+    fetchSavedPayments(user.token).then(rows => {
+      if (rows?.length) setSavedPayments(rows);
+    }).catch(() => {});
+  }, [user]);
+
   const startHold = () => {
     setHoldTimer(true);
     setTimeLeft(600);
@@ -1288,7 +1412,7 @@ const SeatMapPage = ({ event, setPage, toast, user }) => {
       if (seat.state === "purchased" || seat.state === "blocked" || seat.state === "vip_reserved") status = "sold";
       else if (seat.state === "waitlist_held") status = "held";
       else if (seat.accessible) status = "accessible";
-      const row = `S${seat.section_id}-${seat.y_coord ?? 0}`;
+      const row = `${sec.section_name}-R${seat.y_coord ?? 0}`;
       const basePrice = Number(event?.price || 0);
       const factor = Number(seat.price_factor || 1);
       return {
@@ -1325,14 +1449,15 @@ const SeatMapPage = ({ event, setPage, toast, user }) => {
   const selectedTotal = selected.reduce((a, id) => a + (seats.find(s => s.id === id)?.price || 0), 0);
 
   const checkoutSelected = async () => {
-    if (!selected.length) return;
+    if (!selected.length || bookingInProgress) return;
+    setBookingInProgress(true);
     try {
       for (const seatId of selected) {
         await bookSeat({
           event_id: eventId,
           seat_id: seatId,
           user_id: user.user_id,
-          method: "Cash",
+          method: payMethod,
           amount: seats.find(s => s.id === seatId)?.price || 0
         }, user.token);
       }
@@ -1343,6 +1468,8 @@ const SeatMapPage = ({ event, setPage, toast, user }) => {
       await reloadSeatmap();
     } catch (error) {
       toast(error.message || "Booking failed", "error");
+    } finally {
+      setBookingInProgress(false);
     }
   };
 
@@ -1403,39 +1530,47 @@ const SeatMapPage = ({ event, setPage, toast, user }) => {
 
             {/* Seat grid */}
             <div style={{ display:"flex", flexDirection:"column", gap:5, alignItems:"center" }}>
-              {Object.entries(byRow).map(([row, rowSeats]) => (
-                <div key={row} style={{ display:"flex", alignItems:"center", gap:5 }}>
-                  <span style={{ fontSize:11, color:T.textDim, width:16, textAlign:"center", fontWeight:600, flexShrink:0 }}>{row}</span>
-                  <div style={{ display:"flex", gap:4 }}>
-                    {rowSeats.slice(0,7).map(seat => {
-                      const isSel = selected.includes(seat.id);
-                      const vis = filter==="all"||seat.status===filter||(filter==="selected"&&isSel);
-                      return (
-                        <div key={seat.id} className={`seat ${isSel?"selected":seat.status}`} onClick={()=>toggle(seat)}
-                          title={`Seat ${seat.id} — PKR ${seat.price.toLocaleString()}${seat.status==="accessible"?" · Accessible":""}`}
-                          style={{ opacity:vis?1:0.15, position:"relative" }}>
-                          {seat.status==="accessible"&&!isSel&&<span style={{fontSize:8}}>♿</span>}
-                        </div>
-                      );
-                    })}
+              {Object.entries(byRow).map(([row, rowSeats]) => {
+                const mid = Math.ceil(rowSeats.length / 2);
+                const left = rowSeats.slice(0, mid);
+                const right = rowSeats.slice(mid);
+                const shortLabel = row.replace(/^(.+?)-R(\d+)$/, (_, sec, r) =>
+                  sec.length > 4 ? sec.slice(0,3).toUpperCase() + r : sec + r
+                );
+                return (
+                  <div key={row} style={{ display:"flex", alignItems:"center", gap:5 }}>
+                    <span style={{ fontSize:11, color:T.textDim, width:36, textAlign:"right", fontWeight:600, flexShrink:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{shortLabel}</span>
+                    <div style={{ display:"flex", gap:4 }}>
+                      {left.map(seat => {
+                        const isSel = selected.includes(seat.id);
+                        const vis = filter==="all"||seat.status===filter||(filter==="selected"&&isSel);
+                        return (
+                          <div key={seat.id} className={`seat ${isSel?"selected":seat.status}`} onClick={()=>toggle(seat)}
+                            title={`Seat ${seat.id} — PKR ${seat.price.toLocaleString()}${seat.status==="accessible"?" · Accessible":""}`}
+                            style={{ opacity:vis?1:0.15, position:"relative" }}>
+                            {seat.status==="accessible"&&!isSel&&<span style={{fontSize:8}}>♿</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {right.length > 0 && <div style={{ width:16 }} />}
+                    <div style={{ display:"flex", gap:4 }}>
+                      {right.map(seat => {
+                        const isSel = selected.includes(seat.id);
+                        const vis = filter==="all"||seat.status===filter||(filter==="selected"&&isSel);
+                        return (
+                          <div key={seat.id} className={`seat ${isSel?"selected":seat.status}`} onClick={()=>toggle(seat)}
+                            title={`Seat ${seat.id} — PKR ${seat.price.toLocaleString()}`}
+                            style={{ opacity:vis?1:0.15 }}>
+                            {seat.status==="accessible"&&!isSel&&<span style={{fontSize:8}}>♿</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <span style={{ fontSize:11, color:T.textDim, width:36, textAlign:"left", fontWeight:600, flexShrink:0 }}>{shortLabel}</span>
                   </div>
-                  <div style={{ width:16 }} />
-                  <div style={{ display:"flex", gap:4 }}>
-                    {rowSeats.slice(7).map(seat => {
-                      const isSel = selected.includes(seat.id);
-                      const vis = filter==="all"||seat.status===filter||(filter==="selected"&&isSel);
-                      return (
-                        <div key={seat.id} className={`seat ${isSel?"selected":seat.status}`} onClick={()=>toggle(seat)}
-                          title={`Seat ${seat.id} — PKR ${seat.price.toLocaleString()}`}
-                          style={{ opacity:vis?1:0.15 }}>
-                          {seat.status==="accessible"&&!isSel&&<span style={{fontSize:8}}>♿</span>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <span style={{ fontSize:11, color:T.textDim, width:16, textAlign:"center", fontWeight:600, flexShrink:0 }}>{row}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Zoom hint */}
@@ -1478,24 +1613,61 @@ const SeatMapPage = ({ event, setPage, toast, user }) => {
                       <span style={{ fontSize:13, fontWeight:700, color:T.gold }}>PKR {selected.reduce((a,id)=>a+(seats.find(s=>s.id===id)?.price||0),0).toLocaleString()}</span>
                     </div>
                   </div>
-                  <button className="btn btn-primary" style={{ width:"100%", justifyContent:"center", marginBottom:8 }} onClick={checkoutSelected}>
-                    Book Selected - PKR {selectedTotal.toLocaleString()}
+                  <button className="btn btn-primary" style={{ width:"100%", justifyContent:"center", marginBottom:8 }} onClick={checkoutSelected} disabled={bookingInProgress}>
+                    {bookingInProgress ? "Booking…" : `Book Selected - PKR ${selectedTotal.toLocaleString()}`}
                   </button>
                   <button className="btn btn-ghost" style={{ width:"100%", justifyContent:"center" }} onClick={()=>{setSelected([]);setHoldTimer(false);setTimeLeft(0);}}>Clear All</button>
+
+                  {/* Payment method selector */}
+                  <div style={{ marginTop:16, paddingTop:16, borderTop:`1px solid ${T.border}` }}>
+                    <p style={{ fontSize:12, fontWeight:600, color:T.textSub, marginBottom:10, textTransform:"uppercase", letterSpacing:.5 }}>Payment method</p>
+                    {["Online Wallet Payment","Bank Payment","Cash","COD"].map(m => (
+                      <div key={m} onClick={() => setPayMethod(m)}
+                        style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", borderRadius:8, marginBottom:5, cursor:"pointer", background:payMethod===m ? T.goldGlow : "transparent", border:`1px solid ${payMethod===m ? T.borderGold : "transparent"}` }}>
+                        <div style={{ width:14, height:14, borderRadius:"50%", border:`2px solid ${payMethod===m ? T.gold : T.border}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                          {payMethod===m && <div style={{ width:6, height:6, borderRadius:"50%", background:T.gold }} />}
+                        </div>
+                        <span style={{ fontSize:12, color:payMethod===m ? T.gold : T.textSub }}>{m}</span>
+                      </div>
+                    ))}
+                    {savedPayments.length > 0 && (
+                      <div style={{ marginTop:8, paddingTop:8, borderTop:`1px solid ${T.border}` }}>
+                        <p style={{ fontSize:11, color:T.textDim, marginBottom:6 }}>Saved accounts</p>
+                        {savedPayments.map(sp => (
+                          <div key={sp.sp_id} onClick={() => setPayMethod("Bank Payment")}
+                            style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", borderRadius:8, marginBottom:5, cursor:"pointer", background:T.bgSurface, border:`1px solid ${T.border}` }}>
+                            <Ic n="card" s={13} c={T.textSub} />
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <p style={{ fontSize:12, color:T.text, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{sp.bank}</p>
+                              <p style={{ fontSize:11, color:T.textDim }}>····{sp.acc_no.slice(-4)}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
 
               <div style={{ marginTop:20, paddingTop:18, borderTop:`1px solid ${T.border}` }}>
                 <h4 style={{ fontSize:12, fontWeight:600, color:T.textSub, marginBottom:12, textTransform:"uppercase", letterSpacing:.5 }}>Section Pricing</h4>
-                {[["Rows A–B","VIP","PKR 7,000"],["Rows C–D","Premium","PKR 5,000"],["Rows E–G","Standard","PKR 3,500"]].map(([rows,name,price]) => (
-                  <div key={name} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-                    <div>
-                      <span style={{ fontSize:12, color:T.text, fontWeight:500 }}>{name}</span>
-                      <span style={{ fontSize:11, color:T.textDim, marginLeft:6 }}>{rows}</span>
+                {(seatmap?.sections || []).map(sec => {
+                  const basePrice = Number(event?.price || 0);
+                  const factor = Number(sec.seats?.[0]?.price_factor || 1);
+                  const sectionPrice = Math.round(basePrice * factor);
+                  const available = (sec.seats || []).filter(s => s.state === "available").length;
+                  return (
+                    <div key={sec.section_id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                      <div>
+                        <span style={{ fontSize:12, color:T.text, fontWeight:500 }}>{sec.section_name}</span>
+                        <span style={{ fontSize:11, color:T.textDim, marginLeft:6 }}>{available} left</span>
+                      </div>
+                      <span style={{ fontSize:12, fontWeight:600, color:T.gold }}>
+                        {sectionPrice > 0 ? `PKR ${sectionPrice.toLocaleString()}` : "Free"}
+                      </span>
                     </div>
-                    <span style={{ fontSize:12, fontWeight:600, color:T.gold }}>{price}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -1601,6 +1773,16 @@ const MyTicketsPage = ({ toast, user }) => {
                   </button>
                   <button className="btn btn-secondary btn-sm" onClick={()=>setQrModal(b)}>
                     <Ic n="qr" s={13} />QR Code
+                  </button>
+                  <button className="btn btn-danger btn-sm" onClick={async ()=>{
+                    if (!user?.token) return toast("Not signed in","error");
+                    try {
+                      await cancelTicketApi(b.id, user.token);
+                      setTickets(ts => ts.filter(t => t.id !== b.id));
+                      toast("Ticket cancelled and seat released","success");
+                    } catch(e){ toast(e.message||"Cancel failed","error"); }
+                  }}>
+                    <Ic n="x" s={13} />Cancel
                   </button>
                 </div>
               </div>
@@ -1819,9 +2001,9 @@ const VenuesPage = ({ toast, user }) => {
         venue_id: v.venue_id,
         name: v.venue_name,
         address: v.venue_description || "No description",
-        capacity: Number(v.capacity || 0),
-        sections: Number(v.sections || 0),
-        events: Number(v.events || 0),
+        capacity: 0,
+        sections: Number(v.section_count || 0),
+        events: Number(v.event_count || 0),
         img: "🏟️"
       }));
       setVenues(mapped);
@@ -2132,7 +2314,7 @@ const CreateEventPage = ({ toast, user, venuesData = [] }) => {
                 <div>
                   <label style={{ fontSize:12, color:T.textSub, display:"block", marginBottom:6 }}>Category</label>
                   <select value={form.category} onChange={F("category")}>
-                    {["Music","Theatre","Sports","Conference","Art","Comedy","Other"].map(c=><option key={c}>{c}</option>)}
+                    {["Concert","Seminar","Movie Screening","Party"].map(c=><option key={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>
@@ -2863,7 +3045,10 @@ export default function App() {
   if (!user) return (
     <>
       <style>{STYLES}</style>
-      <AuthPage onLogin={(u) => { setUser(u); setPage("home"); }} />
+      {page === "reset-password"
+        ? <ResetPasswordPage onDone={() => setPage("home")} />
+        : <AuthPage onLogin={(u) => { setUser(u); setPage("home"); }} onResetPassword={() => setPage("reset-password")} />
+      }
     </>
   );
 

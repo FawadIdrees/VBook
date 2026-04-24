@@ -234,5 +234,3 @@ INSERT INTO Feedback (feedback_id, user_id, event_id, rating, comment, created_a
 ('F001','U002','E001',5,'Amazing performance, great sound and energy!','2026-02-26 21:00:00'),
 ('F002','U004','E003',4,'Good selection of films, seating was comfortable.','2026-03-02 18:30:00');
 GO
-
-select * from Events;

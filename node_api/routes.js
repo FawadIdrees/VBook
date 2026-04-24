@@ -80,8 +80,12 @@ async function deleteHoldsFor(pool, user_id, event_id, seat_id) {
   const req = pool.request()
     .input('user_id', sql.VarChar(20), user_id)
     .input('event_id', sql.VarChar(20), event_id);
-  if (seat_id) req.input('seat_id', sql.VarChar(20), seat_id).query('DELETE FROM WaitlistHolds WHERE user_id=@user_id AND event_id=@event_id AND seat_id=@seat_id');
-  else req.query('DELETE FROM WaitlistHolds WHERE user_id=@user_id AND event_id=@event_id');
+  if (seat_id) {
+    req.input('seat_id', sql.VarChar(20), seat_id);
+    await req.query('DELETE FROM WaitlistHolds WHERE user_id=@user_id AND event_id=@event_id AND seat_id=@seat_id');
+  } else {
+    await req.query('DELETE FROM WaitlistHolds WHERE user_id=@user_id AND event_id=@event_id');
+  }
 }
 
 async function getActiveHoldsForEvent(pool, event_id) {
@@ -244,6 +248,16 @@ router.post('/auth/request-password-reset', wrap(async (req, res) => {
   if (process.env.EXPOSE_RESET_TOKEN === 'true') {
     return res.json({ message: 'Password reset token generated', reset_token: token });
   }
+  // Send reset email (best-effort)
+  try {
+    const resetUrl = `${process.env.APP_URL || 'http://localhost:3000'}?page=reset-password&token=${token}`;
+    await sendMail({
+      to: email,
+      subject: 'Reset your vbook password',
+      text: `Hi,\n\nClick the link below to reset your vbook password (expires in 1 hour):\n\n${resetUrl}\n\nOr paste this token into the app:\n${token}\n\nIf you did not request this, you can safely ignore this email.`,
+      html: `<p>Hi,</p><p>Click the link below to reset your vbook password (expires in 1 hour):</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>Or paste this token into the app: <code>${token}</code></p><p>If you did not request this, you can safely ignore this email.</p>`
+    });
+  } catch (mailErr) { console.warn('Reset email failed:', mailErr.message || mailErr); }
   res.json({ message: 'If that email is registered you will receive a reset link.' });
 }));
 
@@ -470,12 +484,14 @@ router.get('/users/:id/tickets', authenticate, wrap(async (req, res) => {
   const r = await pool.request()
     .input('uid', sql.VarChar(20), req.params.id)
     .query(`SELECT t.ticket_id, t.event_id, e.event_name, e.event_date,
-                   t.seat_id, s.seat_num, sec.section_name, v.venue_name
+                   t.seat_id, s.seat_num, sec.section_name, v.venue_name,
+                   ISNULL(p.amount, 0) AS ticket_price
             FROM Tickets  t
             JOIN Events   e   ON t.event_id   = e.event_id
             JOIN Seats    s   ON t.seat_id    = s.seat_id
             JOIN Sections sec ON s.section_id = sec.section_id
             JOIN Venues   v   ON e.venue_id   = v.venue_id
+            LEFT JOIN Payments p ON p.ticket_id = t.ticket_id AND p.user_id = @uid
             WHERE t.purchased_by = @uid
             ORDER BY e.event_date DESC`);
   res.json(r.recordset);
@@ -692,10 +708,13 @@ router.get('/events/:id/seatmap', wrap(async (req, res) => {
 
   const seats = seatsR.recordset.map(s => {
     let state = 'available';
-    if (s.blocked)            state = 'blocked';
-    else if (s.purchased_by)  state = 'purchased';
-    else if (heldSeatIds.has(s.seat_id)) state = 'waitlist_held';
-    else if (s.vip_only === 'Y') state = 'vip_reserved';
+    if (s.blocked)                                            state = 'blocked';
+    else if (s.purchased_by)                                  state = 'purchased';
+    else if (heldSeatIds.has(s.seat_id))                      state = 'waitlist_held';
+    // vip_only === 'Y' means a ticket row exists with reserved='Y' and no buyer yet
+    // Only mark as vip_reserved if the ticket row explicitly exists (vip_only is not null)
+    else if (s.vip_only === 'Y' && s.purchased_by === null)   state = 'vip_reserved';
+    // If vip_only is null, no ticket row exists for this event — seat is freely bookable
 
     return {
       seat_id:      s.seat_id,
@@ -742,7 +761,18 @@ router.get('/events/:id/waiting', wrap(async (req, res) => {
 
 router.get('/venues', wrap(async (req, res) => {
   const pool = await poolPromise;
-  const r = await pool.request().query('SELECT * FROM Venues');
+  const r = await pool.request().query(`
+    SELECT v.venue_id, v.venue_name, v.venue_description,
+           ISNULL(sc.section_count, 0) AS section_count,
+           ISNULL(ec.event_count, 0)   AS event_count
+    FROM Venues v
+    LEFT JOIN (
+      SELECT venue_id, COUNT(*) AS section_count FROM Sections GROUP BY venue_id
+    ) sc ON sc.venue_id = v.venue_id
+    LEFT JOIN (
+      SELECT venue_id, COUNT(*) AS event_count FROM Events GROUP BY venue_id
+    ) ec ON ec.venue_id = v.venue_id
+  `);
   res.json(r.recordset);
 }));
 
@@ -1191,8 +1221,13 @@ router.post('/book', authenticate, wrap(async (req, res) => {
         return res.status(403).json({ error: 'hold_id does not match booking scope or user' });
       }
     } else if (holdRows.length > 0 && req.user.type !== 'admin') {
-      await transaction.rollback();
-      return res.status(423).json({ error: 'A waitlist hold exists for this seat/section. Provide a valid hold_id.' });
+      // Only block if the hold belongs to a DIFFERENT user — a hold by the current user means they
+      // were promoted and can book freely (hold_id not required in that case).
+      const othersHold = holdRows.find(h => h.user_id !== user_id);
+      if (othersHold) {
+        await transaction.rollback();
+        return res.status(423).json({ error: 'A waitlist hold exists for this seat/section. Provide a valid hold_id.' });
+      }
     }
 
     // Use existing unpurchased ticket row if present; otherwise create a new one.
@@ -1234,6 +1269,37 @@ router.post('/book', authenticate, wrap(async (req, res) => {
 
     // Emit seat update so connected frontends can refresh
     try { if (io) io.emit('seat-updated', { event_id, seat_id, status: 'purchased', ticket_id, user_id }); } catch (e) {}
+
+    // Send booking confirmation email (best-effort, non-blocking)
+    try {
+      const uR = await pool.request()
+        .input('uid', sql.VarChar(20), user_id)
+        .query('SELECT email, username FROM Users WHERE user_id=@uid');
+      const evR2 = await pool.request()
+        .input('eid', sql.VarChar(20), event_id)
+        .query(`SELECT e.event_name, e.event_date, v.venue_name, e.ticket_price
+                FROM Events e LEFT JOIN Venues v ON e.venue_id=v.venue_id
+                WHERE e.event_id=@eid`);
+      const sR = await pool.request()
+        .input('sid', sql.VarChar(20), seat_id)
+        .query(`SELECT s.seat_num, sec.section_name
+                FROM Seats s JOIN Sections sec ON s.section_id=sec.section_id
+                WHERE s.seat_id=@sid`);
+      if (uR.recordset[0] && evR2.recordset[0]) {
+        const { email, username } = uR.recordset[0];
+        const { event_name, event_date, venue_name } = evR2.recordset[0];
+        const seat_info = sR.recordset[0]
+          ? `${sR.recordset[0].section_name} — Seat ${sR.recordset[0].seat_num}`
+          : seat_id;
+        const dateStr = new Date(event_date).toDateString();
+        await sendMail({
+          to: email,
+          subject: `Booking Confirmed: ${event_name}`,
+          text: `Hi ${username},\n\nYour booking is confirmed!\n\nEvent: ${event_name}\nDate: ${dateStr}\nVenue: ${venue_name}\nSeat: ${seat_info}\nTicket ID: ${ticket_id}\nAmount: PKR ${parsedAmount}\n\nPresent this ticket ID at the entry gate.\n\nThank you for booking with vbook!`,
+          html: `<h2>Booking Confirmed!</h2><p>Hi <strong>${username}</strong>,</p><p>Your booking is confirmed.</p><table><tr><td><b>Event</b></td><td>${event_name}</td></tr><tr><td><b>Date</b></td><td>${dateStr}</td></tr><tr><td><b>Venue</b></td><td>${venue_name}</td></tr><tr><td><b>Seat</b></td><td>${seat_info}</td></tr><tr><td><b>Ticket ID</b></td><td><code>${ticket_id}</code></td></tr><tr><td><b>Amount</b></td><td>PKR ${parsedAmount}</td></tr></table><p>Present your Ticket ID at the entry gate.</p><p>Thank you for booking with vbook!</p>`
+        });
+      }
+    } catch (mailErr) { console.warn('Booking confirmation email failed:', mailErr.message || mailErr); }
 
     res.status(201).json({ message: 'Booking successful', ticket_id, payment_id });
   } catch (err) {
